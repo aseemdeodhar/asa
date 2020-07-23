@@ -1,56 +1,52 @@
-FROM jupyter/minimal-notebook:a95cb64dfe10
-LABEL maintainer="Geoff Boeing <g.boeing@northeastern.edu>"
+########################################################################
+# ASA course Dockerfile
+# Web: https://github.com/gboeing/asa
+#
+# Build an image from the dockerfile:
+# >>> docker build -t gboeing/asa .
+#
+# Push the built image to hub so others can pull/run it:
+# >>> docker tag gboeing/asa gboeing/asa:latest
+# >>> docker login
+# >>> docker push gboeing/asa
+#
+# Run bash in this container and export final conda environment to a yml file:
+# >>> docker run --rm -it -u 0 --name asa -v %cd%:/home/jovyan/work gboeing/asa /bin/bash
+# >>> conda env export -n base > /home/jovyan/work/environment.yml
+#
+# Run jupyter lab in this container:
+# >>> docker run --rm -it --name asa -p 8888:8888 -v %cd%:/home/jovyan/work gboeing/asa
+#
+# Stop/delete all local docker containers/images:
+# >>> docker stop $(docker ps -aq)
+# >>> docker rm $(docker ps -aq)
+# >>> docker rmi $(docker images -q)
+########################################################################
 
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+FROM continuumio/miniconda3
+LABEL maintainer="Geoff Boeing <boeing@usc.edu>"
+LABEL url="https://github.com/gboeing/asa"
 
-# symlink and permissions
-USER root
-RUN ln -s /opt/conda/bin/jupyter /usr/local/bin
-USER $NB_UID
+COPY requirements.txt /tmp/
 
-# configure conda
-RUN conda config --set always_yes yes --set show_channel_urls true
-RUN conda config --add channels conda-forge --force
-RUN conda update --all
+# configure conda and install packages in one RUN to keep image tidy
+RUN conda config --set show_channel_urls true && \
+	conda config --set channel_priority strict && \
+    conda config --prepend channels conda-forge && \
+    conda update --yes -n base conda && \
+    conda install --update-all --force-reinstall --yes --file /tmp/requirements.txt && \
+    jupyter labextension install @jupyter-widgets/jupyterlab-manager && \
+	jupyter labextension install jupyter-leaflet && \
+    conda clean --all --yes && \
+    conda env export -n base > environment-windows.yml && \
+    conda info --all && \
+    conda list
 
-# install python packages with conda
-RUN conda install --override-channels -c conda-forge \
-    beautifulsoup4 \
-    bokeh \
-    bottleneck \
-    cartopy \
-    cython \
-    folium \
-    geopandas \
-    ipyleaflet \
-    ipywidgets \
-    jupyterlab \
-    networkx \
-    notebook \
-    nodejs \
-    numexpr \
-    numpy \
-    osmnx \
-    pillow \
-    scikit-learn \
-    scipy \
-    seaborn \
-    statsmodels \
-    xlrd \
-    xlwt
-
-# enable useful jupyter extensions
-RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager
-RUN jupyter labextension install jupyter-leaflet
-
-# set a jupyter notebook password for easier launching (no more copying tokens)
-RUN jupyter notebook -y --generate-config
-RUN echo "c.NotebookApp.password='sha1:937f4dba37cc:8a736cc93673985a13eb1dbd1b46737bdd186d4c'">>/home/jovyan/.jupyter/jupyter_notebook_config.py
-
-# so the notebook launches from the working directory that we mount
+# launch jupyter in the local working directory that we mount
 WORKDIR /home/jovyan/work
 
-# clean up
-RUN conda clean --all
-RUN conda info --all
-RUN conda list
+# set default command to launch when container is run
+CMD ["jupyter", "lab", "--ip='0.0.0.0'", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''", "--NotebookApp.password=''"]
+
+# to test, import OSMnx and print its version
+RUN ipython -c "import osmnx; print(osmnx.__version__)"
